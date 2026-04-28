@@ -1,0 +1,362 @@
+---
+name: ai-partner-creator
+description: 创建AI搭档时务必调用此技能。本技能提供创建和管理 AI 搭档的完整流程指导，包括初始化搭档、配置技能、添加知识库，以及查看搭档清单。适用于用户需要创建新的 AI 搭档、管理已有搭档配置、或查看搭档列表时。
+---
+# AI 搭档创建器
+
+本技能提供创建和管理 AI 搭档的完整流程。
+
+## 关于 AI 搭档
+
+AI 搭档是面向企业场景的专业化智能助手。每个搭档具备：
+
+1. **角色设定** — 完整的提示词文本，定义搭档的角色定位、工作职责和工作原则
+2. **技能配置** — 可组合的技能模块（如发票识别、合规检查等），从本地或远程复制到搭档目录
+3. **知识库** — 业务相关文档（如公司制度、操作规范等），为搭档提供专业知识支撑
+4. **领域标签** — 财务 / 人力资源 / 销售 / 供应链 / 行政 / 法务 / IT / 通用
+
+## 搭档目录结构
+
+每个搭档存放在项目根目录的 `ai-partners/<agent-name>/` 下，结构扁平，所有配置集中在 `assistant.json` 中：
+
+```
+<project-root>/
+└── ai-partners/
+    └── <agent-name>/
+        ├── assistant.json                # 搭档全部配置
+        ├── agent.md                  # 角色设定文档（自动生成）
+        ├── avatar.png                # 头像文件
+        ├── skills/
+        │   └── <skill-name>/         # 完整复制的技能目录
+        └── knowledge/
+            └── (知识库文档)
+```
+
+`assistant.json` 包含所有配置信息：基础信息、角色设定（单一文本字段）、技能清单、知识库清单和版本号。详细字段规范参见 `references/assistant-json-schema.md`。
+
+## 搭档创建流程
+
+### 第 1 步：需求收集
+
+在创建搭档之前，明确以下信息。仅需用户提供功能描述，其余信息由 AI 自动推断生成，无需逐一询问确认：
+
+**基础信息（必须）：**
+
+- 领域标签：AI 根据角色设定和功能描述自动匹配以下选项之一 — 财务 / 人力资源 / 销售 / 供应链 / 行政 / 法务 / IT / 通用
+- 功能描述
+
+> **名称自动生成：** AI 根据用户描述自动生成显示名称和英文标识符。生成规则：
+>
+> - 显示名称：简洁中文，不超过 12 个字
+> - 标识符：小写英文 + 连字符，2–4 个单词，采用角色导向命名（用 `consultant/expert/manager/advisor/specialist` 等职称）
+>
+> **示例：**
+>
+> | 用户描述     | 显示名称     | 标识符                               |
+> | ------------ | ------------ | ------------------------------------ |
+> | 帮我处理报销 | 财务报销顾问 | `finance-reimbursement-consultant` |
+> | 销售流程优化 | 销售流程专家 | `sales-consultant`                 |
+> | 设计系统管理 | 设计系统专家 | `visual-design-expert`             |
+> | 合同审查     | 合同审查顾问 | `legal-contract-advisor`           |
+> | 运维监控     | 运维专家     | `operations-expert`                |
+
+**角色设定（由 AI 自动生成）：**
+
+- 角色定位 — 搭档扮演什么角色
+- 工作职责 — 具体负责哪些任务
+- 工作原则 — 遵循什么原则和约束
+
+AI 根据用户的功能描述自动生成角色设定，统一写入 `assistant.json` 的 `role` 字段（单一文本字段）。用户可在创建完成后查看并手动修改。
+
+**可选信息（用户未提供则跳过）：**
+
+- 需要上传哪些知识库文档
+- 头像图片（不提供则随机分配预置头像）
+
+**技能推荐（AI 自动推断 + 用户确认）：**
+
+AI 根据用户的功能描述自动推断该搭档可能需要的技能，扫描当前工作目录下 `.opencode/skills/dev/` 的**所有子目录**（每个子目录即一个技能），读取每个技能的 `SKILL.md` 中的 `name` 与 `description`，按用户需求自动匹配。
+
+> 注意：技能列表完全来自该目录下的实际内容，**不硬编码任何技能名**。
+
+1. **自动扫描与匹配：**
+
+   ```bash
+   node scripts/list-skills.js --keyword <相关关键词> --format json
+   ```
+
+   > 默认扫描当前项目根目录下的 `./.opencode/skills/dev/` 目录。脚本会读取每个技能的 `SKILL.md`，按名称和描述与关键词自动匹配。
+
+2. **向用户确认：** 将扫描到的技能通过 `AskUserQuestion` 展示给用户，询问是否添加。列出的技能来自 `./.opencode/skills/dev/` 目录下的实际子目录，**不是预定义的技能名**。示例（假设目录下有 若干 技能子目录）：
+
+   > 根据用户描述，从 `./.opencode/skills/dev/` 匹配到以下技能，请选择要添加的：
+   > - `<skill-a>` — <SKILL.md 中的 description>
+   > - `<skill-b>` — <SKILL.md 中的 description>
+
+3. **记录确认结果：** 用户确认要添加的技能路径列表，作为 `--skill` 参数在初始化时传入。
+
+如 `./.opencode/skills/dev/` 目录为空、无可匹配技能，或用户不需要添加，直接跳过此步骤，无需询问。
+
+### 第 2 步：初始化搭档
+
+使用初始化脚本创建搭档目录和基础配置文件。
+
+> **脚本路径说明：** 以下示例中 `scripts/` 指本技能包内的脚本目录。全局安装时实际路径为 `~/.qoder/skills/ai-partner-creator/scripts/`，项目安装时为 `.qoder/skills/ai-partner-creator/scripts/`。执行时请使用实际路径。
+
+```bash
+node scripts/init-agent.js <agent-name> [options]
+```
+
+> **参数由 AI 自动生成：** 根据第 1 步收集的信息，AI 自动生成标识符、显示名称、领域标签和功能描述，用户无需手动填写。
+
+**参数说明：**
+
+| 参数                      | 说明                                                        |
+| ------------------------- | ----------------------------------------------------------- |
+| `<agent-name>`          | 搭档标识符（必填，AI 自动生成），仅限小写字母、数字和连字符 |
+| `--display-name "名称"` | 搭档显示名称（必填，AI 自动生成）                           |
+| `--domain 领域`         | 领域标签（AI 自动匹配）                                     |
+| `--description "描述"`  | 功能描述（AI 自动生成）                                     |
+| `--avatar <图片路径>`   | 自定义头像文件路径（默认：随机分配内置头像）                |
+| `--skill <路径或URL>`   | 预配置技能，可多次使用，初始化时自动添加（可选）            |
+| `--path <项目根目录>`   | 项目路径（默认：当前工作目录）                              |
+
+**头像处理规则：**
+
+- 提供 `--avatar`：将图片复制到搭档目录，统一命名为 `avatar.png`
+- 未提供 `--avatar`：从内置 15 张预置头像中随机选择一张，复制为 `avatar.png`
+
+**示例：**
+
+```bash
+# 用户说「帮我处理报销」，AI 自动生成全部参数
+# AI 扫描 `./.opencode/skills/dev/`，将匹配到的技能交用户确认后加入 --skill 参数
+node scripts/init-agent.js finance-reimbursement-consultant \
+  --display-name "财务报销顾问" \
+  --domain 财务 \
+  --description "智能财务报销顾问，支持发票识别和费用合规检查" \
+  --skill ./.opencode/skills/dev/<用户确认的技能名>
+```
+
+脚本执行后将：
+
+1. 创建 `ai-partners/finance-reimbursement-consultant/` 目录及子目录
+2. 生成 `assistant.json`（自动包含 `type: "assistant"` 和 `id` 字段，以及 TODO 占位符）
+3. 生成 `agent.md`（从 `assistant.json` 的 `description` 和 `role` 字段自动生成）
+4. 复制头像文件
+5. 自动添加用户确认的 `--skill` 技能到 `skills/` 目录并更新 `assistant.json`
+
+### 第 3 步：编辑搭档配置
+
+初始化后，编辑 `assistant.json` 完善以下内容：
+
+> **重要：** 编辑时**不要删除或修改** `type`、`id`、`name`、`createdAt` 等脚本自动生成的字段。
+
+1. **`role` 字段** — 填写完整的角色设定提示词。这是搭档最核心的配置，决定了搭档的行为和能力边界。所有角色相关内容（定位、职责、原则）统一写在这一个文本字段中。
+2. **`description` 字段** — 由 AI 自动生成，用户可在创建完成后手动修改。
+
+**role 字段编写建议：**
+
+```
+# 角色定位
+你是一位专业的财务报销顾问，作为企业财务报销流程的智能助手。
+
+# 工作职责
+- 协助员工填写报销单
+- 识别和验证发票信息
+- 检查费用是否符合公司报销政策
+- 提供报销流程指导
+
+# 工作原则
+- 严格遵守公司财务制度
+- 保护财务数据隐私
+- 遇到不确定的情况主动提示用户咨询财务部门
+```
+
+### 第 4 步：配置技能（按需补充）
+
+如果在初始化时已通过 `--skill` 添加技能，此步骤可跳过。如需补充更多技能，使用 `add-skill.js`：
+
+> **本地技能目录：** 项目根目录下的 `./.opencode/skills/dev/`，AI 自动扫描并匹配。
+> **扫描可用技能：** `node scripts/list-skills.js --keyword <关键词>`
+
+```bash
+node scripts/add-skill.js <agent-name> --source <来源> [--path <项目根目录>]
+```
+
+**本地技能：**
+
+```bash
+# 从本地技能目录添加（<skill-name> 为 `./.opencode/skills/dev/` 下的实际技能目录名）
+node scripts/add-skill.js <agent-name> --source ./.opencode/skills/dev/<skill-name>
+```
+
+**自动匹配（初始化时）：**
+
+```bash
+# AI 扫描 ./.opencode/skills/dev/ 下的所有技能并按需求自动匹配。
+# 经用户确认后，每一个被选中的技能都以 --skill 参数传入（可多次）
+node scripts/init-agent.js <agent-name> \
+  --display-name "..." --domain ... --description "..." \
+  --skill ./.opencode/skills/dev/<skill-1> \
+  --skill ./.opencode/skills/dev/<skill-2>
+```
+
+**远程技能（支持 .zip / .tar.gz）：**
+
+```bash
+# 从 GitHub Release 下载
+node scripts/add-skill.js finance-reimbursement-consultant --source https://github.com/<owner>/<repo>/releases/download/v1.0/invoice-reader.zip
+
+# 从 GitHub 仓库 archive 下载
+node scripts/add-skill.js finance-reimbursement-consultant --source https://github.com/<owner>/invoice-reader/archive/refs/heads/main.zip
+```
+
+脚本执行后将：
+
+1. 将技能完整复制到 `skills/<skill-name>/` 目录
+2. 在 `assistant.json` 的 `skills` 数组中追加条目（含名称 `name`、来源 `source`、来源类型 `sourceType`、复制时间 `copiedAt`）
+
+无论本地还是远程技能，都会完整复制到搭档目录下，保证搭档自包含、不依赖外部路径。
+
+### 第 5 步：添加知识库
+
+将知识库文档复制到搭档的 `knowledge/` 目录，并更新 `assistant.json` 的 `knowledge` 数组。
+
+> 支持格式：`.md`、`.txt`，单文件最大 50MB。
+
+1. 将文档文件复制到 `ai-partners/<agent-name>/knowledge/` 目录
+2. 在 `assistant.json` 的 `knowledge` 数组中添加条目：
+
+```json
+{
+  "filename": "公司报销管理制度.md",
+  "addedAt": "2026-04-18T10:30:00.000Z"
+}
+```
+
+### 第 6 步：验证与迭代
+
+创建完成后，验证搭档配置：
+
+1. 检查 `assistant.json` 中所有 `[TODO:` 占位符是否已替换
+2. 确认 `role` 字段内容完整、清晰
+3. 确认技能目录存在且完整
+4. 确认知识库文档已就位
+5. 运行 `list-agents.js` 确认搭档出现在清单中
+
+根据实际使用效果迭代优化角色设定和技能配置。每次修改 `assistant.json` 后，`updatedAt` 字段应自动更新，同时 `agent.md` 应同步重新生成。
+
+### 第 7 步：输出结果
+
+所有步骤完成后，**必须**输出以下渲染指令，用于展示已创建的 AI 搭档卡片。其中 `id` 为搭档的唯一识别标识（即 `assistant.json` 中的 `name` 字段值）：
+
+:::render:ai-partner {
+  "id": "${agent-name}",
+  "title": "AI搭档"
+}:::
+
+**示例：** 如果创建的搭档 name 为 `finance-reimbursement-consultant`，则输出：
+
+:::render:ai-partner {
+  "id": "finance-reimbursement-consultant",
+  "title": "AI搭档"
+}:::
+
+此渲染指令用于在界面中生成搭档的可视化卡片，是创建流程的最终交付物，不可省略。
+
+## 存取规则
+
+### 头像
+
+- 用户提供本地图片路径 → `init-agent.js` 复制到搭档根目录（如 `avatar.png`）
+- 未提供头像 → 从内置 `assets/avatars/` 15 张预置头像中随机选择并复制（如 `avatar.png`）
+- `assistant.json` 中 `avatar` 字段记录文件名（非完整路径）
+- 后续可直接替换文件并更新 `avatar` 字段
+
+### 技能
+
+- **自动添加：** `init-agent.js` 支持 `--skill` 参数（可多次使用），初始化时自动调用 `add-skill.js` 完成添加
+- **手动添加：** `add-skill.js <agent-name> --source <路径或URL>` 递归复制/下载到 `skills/<name>/`
+- **发现技能：** `list-skills.js --keyword <关键词>` 扫描本地技能目录，按名称和描述匹配
+- `assistant.json` 的 `skills` 数组追加条目，记录来源和复制时间
+- 删除技能：手动删除 `skills/<name>/` 目录并从 `assistant.json` 的 `skills` 数组中移除
+
+### 知识库
+
+- 支持格式：`.md`、`.txt`，单文件最大 50MB
+- 文档复制到 `knowledge/` 目录
+- `assistant.json` 的 `knowledge` 数组追加条目
+- 删除知识：手动删除文件并从数组中移除
+
+### 角色设定文档
+
+- `agent.md` 由 `init-agent.js` 自动生成，内容取自 `assistant.json` 的 `description` 和 `role` 字段
+- 修改 `assistant.json` 的 `description` 或 `role` 后，需同步重新生成 `agent.md`
+
+### 版本
+
+- 每次修改 `assistant.json` 时更新 `updatedAt` 为当前时间
+- `version` 字段记录当前语义化版本号，按需手动递增
+
+## 清单管理
+
+使用 `list-agents.js` 查看所有已创建的搭档：
+
+```bash
+# 列出当前项目的所有搭档
+node scripts/list-agents.js
+
+# JSON 格式输出
+node scripts/list-agents.js --format json
+
+# 按领域过滤
+node scripts/list-agents.js --domain 财务
+
+# 查看远程搭档清单
+node scripts/list-agents.js --remote https://example.com/agents.json
+
+# 指定项目路径
+node scripts/list-agents.js --path /path/to/project
+```
+
+## 完整示例：创建「财务报销顾问」
+
+以下演示端到端创建一个财务报销顾问：
+
+```bash
+# 1. 扫描本地技能目录（AI 自动执行），得到可用技能清单
+node scripts/list-skills.js --keyword <根据用户需求提取的关键词>
+
+# 2. 初始化搭档（带上用户确认后的技能，技能名来自实际目录下的子目录，不硬编码）
+node scripts/init-agent.js finance-reimbursement-consultant \
+  --display-name "财务报销顾问" \
+  --domain 财务 \
+  --description "智能财务报销顾问，支持发票识别、费用合规检查和报销流程指导" \
+  --skill ./.opencode/skills/dev/<用户确认的技能名>
+
+# 3. 查看搭档清单
+node scripts/list-agents.js
+```
+
+初始化后编辑 `ai-partners/finance-reimbursement-consultant/assistant.json`，完善 `role` 字段：
+
+```json
+{
+  "role": "# 角色定位\n你是一位专业的财务报销顾问，帮助员工高效完成报销。\n\n# 工作职责\n- 协助员工填写报销单，自动识别发票信息\n- 检查费用是否符合公司报销政策\n- 检测重复报销和异常金额\n- 提供报销进度查询和流程指导\n\n# 工作原则\n- 严格遵守公司《报销管理制度》\n- 保护所有财务数据隐私\n- 对不确定的费用标准主动提示咨询财务部门\n- 所有金额计算务必准确，不做近似处理"
+}
+```
+
+将知识库文档复制到搭档目录：
+
+```bash
+cp /path/to/公司报销管理制度.md ai-partners/finance-reimbursement-consultant/knowledge/
+```
+
+并在 `assistant.json` 的 `knowledge` 数组中添加条目。
+
+## 资源参考
+
+- `references/assistant-json-schema.md` — assistant.json 完整字段规范
+- `scripts/list-skills.js` — 扫描本地可用技能
+- `assets/avatars/` — 15 张预置头像（PNG 格式，avatar-01.png ~ avatar-15.png）
