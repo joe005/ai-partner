@@ -16,7 +16,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 
 // ── 有效领域列表 ──
 const VALID_DOMAINS = ['财务', '人力资源', '销售', '供应链', '行政', '法务', 'IT', '通用'];
@@ -241,8 +241,10 @@ function main() {
     for (const skillSource of opts.skills) {
       if (!skillSource) continue;
       try {
-        execSync(
-          `node "${addSkillScript}" "${opts.agentName}" --source "${skillSource}" --path "${projectPath}"`,
+        // execFileSync + 参数数组，避免命令注入 & 引号转义问题
+        execFileSync(
+          process.execPath,
+          [addSkillScript, opts.agentName, '--source', skillSource, '--path', projectPath],
           { stdio: 'inherit' }
         );
       } catch {

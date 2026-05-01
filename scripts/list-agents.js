@@ -14,7 +14,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 
 // ── 参数解析 ──
 function parseArgs(argv) {
@@ -53,7 +53,7 @@ function scanLocalAgents(aiPartnersDir) {
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
 
-    const agentJsonPath = path.join(aiPartnersDir, entry.name, 'assistant.json');
+    const agentJsonPath = path.resolve(aiPartnersDir, entry.name, 'assistant.json');
     if (!fs.existsSync(agentJsonPath)) continue;
 
     try {
@@ -82,7 +82,8 @@ function scanLocalAgents(aiPartnersDir) {
 function fetchRemoteAgents(url) {
   try {
     console.log(`⏳ 正在获取远程清单: ${url}`);
-    const result = execSync(`curl -fsSL "${url}"`, { encoding: 'utf-8' });
+    // execFileSync + 参数数组，避免命令注入
+    const result = execFileSync('curl', ['-fsSL', url], { encoding: 'utf-8' });
     const data = JSON.parse(result);
     return Array.isArray(data.agents) ? data.agents : (Array.isArray(data) ? data : []);
   } catch (e) {

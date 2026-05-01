@@ -8,7 +8,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const os = require('os');
+const { execFileSync } = require('child_process');
 
 // ── 参数解析 ──
 function parseArgs(argv) {
@@ -32,6 +33,13 @@ function parseArgs(argv) {
   return result;
 }
 
+// ── 解析路径（相对路径基于 baseDir，绝对路径直接规范化） ──
+function resolvePath(baseDir, inputPath) {
+  if (!inputPath) return '';
+  if (path.isAbsolute(inputPath)) return path.normalize(inputPath);
+  return path.resolve(baseDir, inputPath);
+}
+
 // ── 判断是否为远程 URL ──
 function isRemoteUrl(source) {
   return /^https?:\/\//i.test(source);
@@ -42,8 +50,8 @@ function copyDirRecursive(src, dest) {
   fs.mkdirSync(dest, { recursive: true });
   const entries = fs.readdirSync(src, { withFileTypes: true });
   for (const entry of entries) {
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
+    const srcPath = path.resolve(src, entry.name);
+    const destPath = path.resolve(dest, entry.name);
     if (entry.isDirectory()) {
       copyDirRecursive(srcPath, destPath);
     } else {
@@ -52,18 +60,32 @@ function copyDirRecursive(src, dest) {
   }
 }
 
+// ── 如目录仅含单一子目录（如 GitHub archive 的 repo-main/），将其内容上提一层 ──
+function flattenSingleTopDir(dir) {
+  if (!fs.existsSync(dir)) return;
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  if (entries.length !== 1 || !entries[0].isDirectory()) return;
+
+  const inner = path.resolve(dir, entries[0].name);
+  const innerEntries = fs.readdirSync(inner);
+  for (const name of innerEntries) {
+    fs.renameSync(path.resolve(inner, name), path.resolve(dir, name));
+  }
+  fs.rmdirSync(inner);
+}
+
 // ── 从远程 URL 下载并解压技能 ──
 function downloadAndExtract(url, destDir, skillName) {
-  const tmpDir = path.join(require('os').tmpdir(), `skill-download-${Date.now()}`);
+  const tmpDir = path.resolve(os.tmpdir(), `skill-download-${Date.now()}`);
   fs.mkdirSync(tmpDir, { recursive: true });
 
   try {
-    const tmpFile = path.join(tmpDir, 'skill-package');
+    const tmpFile = path.resolve(tmpDir, 'skill-package');
 
-    // 下载
+    // 下载（execFileSync + 参数数组 → 避免命令注入）
     console.log(`⏳ 正在下载: ${url}`);
     try {
-      execSync(`curl -fsSL -o "${tmpFile}" "${url}"`, { stdio: 'pipe' });
+      execFileSync('curl', ['-fsSL', '-o', tmpFile, url], { stdio: 'pipe' });
     } catch (err) {
       const stderr = err.stderr ? err.stderr.toString().trim() : '';
       if (stderr.includes('404') || stderr.includes('Not Found')) {
@@ -80,25 +102,27 @@ function downloadAndExtract(url, destDir, skillName) {
       throw new Error(`下载失败: 文件为空或未成功下载\n  URL: ${url}`);
     }
 
-    // 检测文件类型并解压
+    // 解压（execFileSync + 参数数组）
     fs.mkdirSync(destDir, { recursive: true });
 
-    if (url.endsWith('.zip')) {
-      execSync(`unzip -q "${tmpFile}" -d "${destDir}"`, { stdio: 'pipe' });
-    } else if (url.endsWith('.tar.gz') || url.endsWith('.tgz')) {
-      execSync(`tar -xzf "${tmpFile}" -C "${destDir}"`, { stdio: 'pipe' });
+    const tryUnzip = () => execFileSync('unzip', ['-q', tmpFile, '-d', destDir], { stdio: 'pipe' });
+    const tryTar = () => execFileSync('tar', ['-xzf', tmpFile, '-C', destDir], { stdio: 'pipe' });
+
+    if (/\.zip$/i.test(url)) {
+      tryUnzip();
+    } else if (/\.(tar\.gz|tgz)$/i.test(url)) {
+      tryTar();
     } else {
-      // 尝试作为 zip 解压
-      try {
-        execSync(`unzip -q "${tmpFile}" -d "${destDir}"`, { stdio: 'pipe' });
-      } catch {
-        try {
-          execSync(`tar -xzf "${tmpFile}" -C "${destDir}"`, { stdio: 'pipe' });
-        } catch {
+      // 未知格式：依次尝试 zip 与 tar
+      try { tryUnzip(); } catch {
+        try { tryTar(); } catch {
           throw new Error('无法识别的压缩格式，仅支持 .zip 和 .tar.gz/.tgz');
         }
       }
     }
+
+    // GitHub archive 解压后会多一层 repo-<branch>/，扁平化
+    flattenSingleTopDir(destDir);
 
     console.log(`✅ 下载并解压完成: ${skillName}`);
   } finally {
@@ -142,8 +166,9 @@ function main() {
     process.exit(1);
   }
 
-  const agentDir = path.resolve(opts.projectPath, 'ai-partners', opts.agentName);
-  const agentJsonPath = path.join(agentDir, 'assistant.json');
+  const projectPath = path.resolve(opts.projectPath);
+  const agentDir = path.resolve(projectPath, 'ai-partners', opts.agentName);
+  const agentJsonPath = path.resolve(agentDir, 'assistant.json');
 
   // 验证搭档存在
   if (!fs.existsSync(agentJsonPath)) {
@@ -157,7 +182,7 @@ function main() {
 
   // 推断技能名称
   const skillName = inferSkillName(opts.source);
-  const skillDestDir = path.join(agentDir, 'skills', skillName);
+  const skillDestDir = path.resolve(agentDir, 'skills', skillName);
 
   // 防止重复添加（如果 JSON 有记录但目录已删除，自动清理旧记录）
   const existingSkillIndex = (agentJson.skills || []).findIndex(s => s.name === skillName);
@@ -180,7 +205,8 @@ function main() {
   const sourceType = isRemoteUrl(opts.source) ? 'remote' : 'local';
 
   if (sourceType === 'local') {
-    const sourcePath = path.resolve(opts.source);
+    // 本地路径基于 projectPath 解析（与 init-agent.js 一致）
+    const sourcePath = resolvePath(projectPath, opts.source);
     if (!fs.existsSync(sourcePath)) {
       console.error(`错误: 源技能路径不存在: ${sourcePath}`);
       process.exit(1);
@@ -191,7 +217,7 @@ function main() {
     } else {
       // 单文件技能
       fs.mkdirSync(skillDestDir, { recursive: true });
-      fs.copyFileSync(sourcePath, path.join(skillDestDir, path.basename(sourcePath)));
+      fs.copyFileSync(sourcePath, path.resolve(skillDestDir, path.basename(sourcePath)));
     }
     console.log(`✅ 复制本地技能: ${sourcePath} → skills/${skillName}/`);
   } else {
@@ -215,7 +241,7 @@ function main() {
   console.log('✅ 更新 assistant.json skills 数组');
 
   // 同步重写 agent.md
-  const agentMdPath = path.join(path.dirname(agentJsonPath), 'agent.md');
+  const agentMdPath = path.resolve(agentDir, 'agent.md');
   const agentMdContent = `---\ndescription: ${agentJson.description}\n---\n\n${agentJson.role}\n`;
   fs.writeFileSync(agentMdPath, agentMdContent, 'utf-8');
   console.log('✅ 同步更新 agent.md');

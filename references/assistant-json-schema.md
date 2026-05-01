@@ -49,8 +49,8 @@
 
 ```json
 {
-  "name": "invoice-reader",
-  "source": "/path/to/local/skill 或 https://example.com/skill.zip",
+  "name": "<skill-name>",
+  "source": "./.opencode/skills/dev/<skill-name> 或 https://example.com/skill.zip",
   "sourceType": "local 或 remote",
   "copiedAt": "2026-04-18T10:00:00.000Z"
 }
@@ -59,7 +59,7 @@
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `name` | string | 技能名称，与 `skills/` 下的子目录名一致 |
-| `source` | string | 技能来源（本地路径或远程 URL） |
+| `source` | string | 技能来源（本地路径或远程 URL），保留用户输入的原始值 |
 | `sourceType` | string | 来源类型：`local`（本地复制）或 `remote`（远程下载） |
 | `copiedAt` | string | 复制/下载时间，ISO 8601 格式 |
 
@@ -93,7 +93,7 @@
   "skills": [
     {
       "name": "invoice-reader",
-      "source": "/path/to/invoice-reader",
+      "source": "./.opencode/skills/dev/invoice-reader",
       "sourceType": "local",
       "copiedAt": "2026-04-18T10:00:00.000Z"
     }
