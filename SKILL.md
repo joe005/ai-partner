@@ -1,6 +1,6 @@
 ---
 name: ai-partner-creator
-description: 创建AI搭档时务必调用此技能。本技能提供创建和管理 AI 搭档的完整流程指导，包括初始化搭档、配置技能、添加知识库，以及查看搭档清单。适用于用户需要创建新的 AI 搭档、管理已有搭档配置、或查看搭档列表时。
+description: 创建和编辑 AI 搭档时务必调用此技能。本技能提供创建、编辑和管理 AI 搭档的完整流程指导，包括初始化搭档、修改搭档配置、配置技能、添加知识库，以及查看搭档清单。适用于用户需要创建新的 AI 搭档、编辑已有搭档（修改名称/角色设定/头像/技能/知识库）、管理搭档配置、或查看搭档列表时。
 ---
 # AI 搭档创建器
 
@@ -177,7 +177,7 @@ node scripts/init-agent.js finance-reimbursement-consultant \
 - 遇到不确定的情况主动提示用户咨询财务部门
 ```
 
-### 第 4 步：配置技能（按需补充）
+### 第 4 步：配置技能
 
 如果在初始化时已通过 `--skill` 添加技能，此步骤可跳过。如需补充更多技能，使用 `add-skill.js`：
 
@@ -240,13 +240,14 @@ node scripts/add-skill.js finance-reimbursement-consultant --source https://gith
 
 ### 第 6 步：验证与迭代
 
-创建完成后，验证搭档配置：
+创建、编辑完成后，逐项验证搭档目录，任一项不通过必须修复后重验：
 
-1. 检查 `assistant.json` 中所有 `[TODO:` 占位符是否已替换
-2. 确认 `role` 字段内容完整、清晰
-3. 确认技能目录存在且完整
-4. 确认知识库文档已就位
-5. 运行 `list-agents.js` 确认搭档出现在清单中
+1. **JSON 可解析**：`assistant.json` 能被 `JSON.parse` 正确解析（语法合法、编码 UTF-8 无 BOM、换行符统一）
+2. **必填字段齐全**：`name` / `role` / `avatar` / `version` / `createdAt` / `updatedAt` 均存在且非空；`name` 为 kebab-case 且与目录名严格一致
+3. **引用资源真实存在**（配置声明的文件磁盘上必须有）：`avatar` 头像文件、`skills[].id` 对应的 `skills/<id>/SKILL.md`、`knowledge[]` 对应的 `knowledge/<file>` 均在磁盘上可读
+4. **无孤儿资源**（磁盘上有的文件配置中必须有）：`skills/` 与 `knowledge/` 目录下不存在未在 `assistant.json` 中声明的子目录或文件
+5. **派生产物同步**：`agent.md` 内容与 `assistant.json.role` 一致；本次变更已刷新 `updatedAt` 为当前时间
+6. **搭档可见**：运行 `list-agents.js`，该搭档出现在清单中
 
 根据实际使用效果迭代优化角色设定和技能配置。每次修改 `assistant.json` 后，`updatedAt` 字段应自动更新，同时 `agent.md` 应同步重新生成。
 
@@ -267,6 +268,10 @@ node scripts/add-skill.js finance-reimbursement-consultant --source https://gith
 }:::
 
 此渲染指令用于在界面中生成搭档的可视化卡片，是创建流程的最终交付物，不可省略。
+
+### 回复内容规范
+
+创建与编辑流程的全部回复（进度提示、确认信息、最终总结）**禁止出现任何 emoji**。
 
 ## 存取规则
 
