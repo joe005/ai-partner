@@ -1,20 +1,20 @@
 #!/usr/bin/env node
 /**
- * 列出 AI 搭档清单
+ * 列出灵基智能体清单
  *
  * 用法：
  *   node list-agents.js [options]
  *
  * 选项：
  *   --path <项目根目录>       默认为当前工作目录
- *   --remote <URL>            从远程获取搭档清单
+ *   --remote <URL>            从远程获取智能体清单
  *   --format table|json       输出格式，默认 table
  *   --domain <领域>           按领域过滤
  */
 
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execSync } = require('child_process');
 
 // ── 参数解析 ──
 function parseArgs(argv) {
@@ -41,7 +41,7 @@ function parseArgs(argv) {
   return result;
 }
 
-// ── 扫描本地搭档目录 ──
+// ── 扫描本地智能体目录 ──
 function scanLocalAgents(aiPartnersDir) {
   const agents = [];
 
@@ -53,7 +53,7 @@ function scanLocalAgents(aiPartnersDir) {
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
 
-    const agentJsonPath = path.resolve(aiPartnersDir, entry.name, 'assistant.json');
+    const agentJsonPath = path.join(aiPartnersDir, entry.name, 'assistant.json');
     if (!fs.existsSync(agentJsonPath)) continue;
 
     try {
@@ -82,8 +82,7 @@ function scanLocalAgents(aiPartnersDir) {
 function fetchRemoteAgents(url) {
   try {
     console.log(`⏳ 正在获取远程清单: ${url}`);
-    // execFileSync + 参数数组，避免命令注入
-    const result = execFileSync('curl', ['-fsSL', url], { encoding: 'utf-8' });
+    const result = execSync(`curl -fsSL "${url}"`, { encoding: 'utf-8' });
     const data = JSON.parse(result);
     return Array.isArray(data.agents) ? data.agents : (Array.isArray(data) ? data : []);
   } catch (e) {
@@ -95,7 +94,7 @@ function fetchRemoteAgents(url) {
 // ── 格式化输出：表格 ──
 function printTable(agents) {
   if (agents.length === 0) {
-    console.log('(空) 未找到任何搭档');
+    console.log('(空) 未找到任何智能体');
     return;
   }
 
@@ -126,7 +125,7 @@ function printTable(agents) {
   console.log(separator);
   rows.forEach(row => console.log(formatRow(row)));
   console.log(separator);
-  console.log(`\n共 ${agents.length} 个搭档`);
+  console.log(`\n共 ${agents.length} 个智能体`);
 }
 
 // ── 辅助函数：计算字符显示宽度（中文占2） ──

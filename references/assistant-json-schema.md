@@ -1,21 +1,19 @@
 # assistant.json 字段规范
 
-本文档详细描述 AI 搭档配置文件 `assistant.json` 的完整字段规范。
+本文档详细描述灵基智能体配置文件 `assistant.json` 的完整字段规范。
 
 ## assistant.json
 
-所有搭档配置集中存放在单一 `assistant.json` 文件中。
+所有智能体配置集中存放在单一 `assistant.json` 文件中。
 
 ### 字段定义
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `type` | string | 是 | 固定值为 `assistant`，标识配置类型 |
-| `id` | string | 是 | 搭档唯一标识符，与 `name` 保持一致 |
-| `name` | string | 是 | 搭档唯一标识符，仅限小写字母、数字和连字符，需与目录名一致 |
-| `displayName` | string | 是 | 搭档显示名称，支持中文 |
-| `avatar` | string | 否 | 头像文件名（如 `avatar.png`），相对于搭档目录 |
-| `description` | string | 是 | 搭档功能的简要描述 |
+| `name` | string | 是 | 智能体唯一标识符，仅限小写字母、数字和连字符，需与目录名一致 |
+| `displayName` | string | 是 | 智能体显示名称，支持中文 |
+| `avatar` | string | 否 | 头像文件名（如 `avatar.png`），相对于智能体目录 |
+| `description` | string | 是 | 智能体功能的简要描述 |
 | `domain` | string | 是 | 领域标签，见下方枚举值 |
 | `visibility` | string | 是 | 可见范围，见下方枚举值，默认 `public` |
 | `role` | string | 是 | 角色设定的完整提示词文本，包括角色定位、工作职责、工作原则等，统一写在一个字段中 |
@@ -36,7 +34,7 @@
 | `行政` | 行政相关场景（办公管理、资产、会议等） |
 | `法务` | 法务相关场景（合同审查、合规、知识产权等） |
 | `IT` | IT 相关场景（开发、运维、安全等） |
-| `通用` | 不属于特定领域的通用搭档（兜底默认值） |
+| `通用` | 不属于特定领域的通用智能体（兜底默认值） |
 
 ### visibility 枚举值
 
@@ -49,8 +47,8 @@
 
 ```json
 {
-  "name": "<skill-name>",
-  "source": "./.opencode/skills/dev/<skill-name> 或 https://example.com/skill.zip",
+  "name": "invoice-reader",
+  "source": "/path/to/local/skill 或 https://example.com/skill.zip",
   "sourceType": "local 或 remote",
   "copiedAt": "2026-04-18T10:00:00.000Z"
 }
@@ -59,7 +57,7 @@
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `name` | string | 技能名称，与 `skills/` 下的子目录名一致 |
-| `source` | string | 技能来源（本地路径或远程 URL），保留用户输入的原始值 |
+| `source` | string | 技能来源（本地路径或远程 URL） |
 | `sourceType` | string | 来源类型：`local`（本地复制）或 `remote`（远程下载） |
 | `copiedAt` | string | 复制/下载时间，ISO 8601 格式 |
 
@@ -81,8 +79,6 @@
 
 ```json
 {
-  "type": "assistant",
-  "id": "finance-reimbursement-consultant",
   "name": "finance-reimbursement-consultant",
   "displayName": "财务报销顾问",
   "avatar": "avatar.png",
@@ -93,7 +89,7 @@
   "skills": [
     {
       "name": "invoice-reader",
-      "source": "./.opencode/skills/dev/invoice-reader",
+      "source": "/path/to/invoice-reader",
       "sourceType": "local",
       "copiedAt": "2026-04-18T10:00:00.000Z"
     }

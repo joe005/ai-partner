@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * AI 搭档初始化脚本
+ * 灵基智能体初始化脚本
  *
  * 用法：
  *   node init-agent.js <agent-name> [options]
@@ -10,24 +10,22 @@
  *   --domain 财务|人力资源|销售|供应链|行政|法务|IT|通用
  *   --description "功能描述"
  *   --avatar <本地图片路径>
- *   --skill <技能路径或URL>      可多次使用，初始化时自动添加技能
  *   --path <项目根目录>          默认为当前工作目录
  */
 
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+
+// ── 预置头像列表 ──
+const DEFAULT_AVATARS = Array.from({ length: 12 }, (_, i) => `avatar-${String(i + 1).padStart(2, '0')}.png`);
 
 // ── 有效领域列表 ──
 const VALID_DOMAINS = ['财务', '人力资源', '销售', '供应链', '行政', '法务', 'IT', '通用'];
 
-// ── 头像文件名匹配规则 ──
-const AVATAR_FILENAME_PATTERN = /^avatar-\d{2}\.png$/;
-
 // ── 参数解析 ──
 function parseArgs(argv) {
   const args = argv.slice(2);
-  const result = { agentName: null, displayName: '', domain: '通用', description: '', avatar: '', projectPath: process.cwd(), skills: [] };
+  const result = { agentName: null, displayName: '', domain: '通用', description: '', avatar: '', projectPath: process.cwd() };
 
   if (args.length === 0 || args[0].startsWith('--')) {
     return null; // 缺少 agent-name
@@ -51,9 +49,6 @@ function parseArgs(argv) {
       case '--path':
         result.projectPath = args[++i] || process.cwd();
         break;
-      case '--skill':
-        result.skills.push(args[++i] || '');
-        break;
     }
   }
 
@@ -68,54 +63,15 @@ function parseArgs(argv) {
   return result;
 }
 
-// ── 解析路径（相对路径基于 baseDir，绝对路径直接规范化） ──
-function resolvePath(baseDir, inputPath) {
-  if (!inputPath) return '';
-  if (path.isAbsolute(inputPath)) {
-    return path.normalize(inputPath);
-  }
-  return path.resolve(baseDir, inputPath);
-}
-
 // ── 复制文件 ──
 function copyFile(src, dest) {
   fs.copyFileSync(src, dest);
 }
 
-// ── 扫描并获取可用的内置头像 ──
+// ── 随机获取默认头像路径（技能包内置） ──
 function getRandomAvatarPath() {
-  const avatarsDir = path.resolve(__dirname, '..', 'assets', 'avatars');
-
-  // 验证目录存在
-  if (!fs.existsSync(avatarsDir)) {
-    throw new Error(`内置头像目录不存在: ${avatarsDir}`);
-  }
-
-  // 读取目录内容（失败时抛出可读的异常）
-  let files;
-  try {
-    files = fs.readdirSync(avatarsDir);
-  } catch (err) {
-    throw new Error(`无法读取头像目录: ${err.message}`);
-  }
-
-  // 严格过滤：只接受 avatar-NN.png 格式，且必须是真实文件
-  const validAvatars = files
-    .filter(filename => AVATAR_FILENAME_PATTERN.test(filename))
-    .map(filename => path.join(avatarsDir, filename))
-    .filter(filePath => {
-      try {
-        return fs.statSync(filePath).isFile();
-      } catch {
-        return false; // 忽略无法访问的文件
-      }
-    });
-
-  if (validAvatars.length === 0) {
-    throw new Error('未找到合法的内置头像文件（预期格式: avatar-NN.png）');
-  }
-
-  return validAvatars[Math.floor(Math.random() * validAvatars.length)];
+  const avatarFile = DEFAULT_AVATARS[Math.floor(Math.random() * DEFAULT_AVATARS.length)];
+  return path.resolve(__dirname, '..', 'avatars', avatarFile);
 }
 
 // ── 生成角色设定 ──
@@ -140,9 +96,8 @@ function main() {
   const opts = parseArgs(process.argv);
 
   if (!opts) {
-    console.error('用法: node init-agent.js <agent-name> [--display-name "名称"] [--domain 领域] [--description "描述"] [--avatar <图片路径>] [--skill <技能路径或URL>] [--path <项目根目录>]');
+    console.error('用法: node init-agent.js <agent-name> [--display-name "名称"] [--domain 领域] [--description "描述"] [--avatar <图片路径>] [--path <项目根目录>]');
     console.error('\n领域可选值: ' + VALID_DOMAINS.join(' | '));
-    console.error('\n可多次使用 --skill 添加多个技能');
     process.exit(1);
   }
 
@@ -158,46 +113,41 @@ function main() {
     opts.domain = '通用';
   }
 
-  const projectPath = path.resolve(opts.projectPath);
-  const agentDir = path.resolve(projectPath, 'ai-partners', opts.agentName);
+  const agentDir = path.resolve(opts.projectPath, 'ai-partners', opts.agentName);
 
   // 防止重复创建
   if (fs.existsSync(agentDir)) {
-    console.error(`错误: 搭档目录已存在: ${agentDir}`);
+    console.error(`错误: 智能体目录已存在: ${agentDir}`);
     process.exit(1);
   }
 
   // 创建目录结构
   fs.mkdirSync(agentDir, { recursive: true });
-  fs.mkdirSync(path.resolve(agentDir, 'skills'), { recursive: true });
-  fs.mkdirSync(path.resolve(agentDir, 'knowledge'), { recursive: true });
-  console.log(`✅ 创建搭档目录: ${agentDir}`);
+  fs.mkdirSync(path.join(agentDir, 'skills'), { recursive: true });
+  fs.mkdirSync(path.join(agentDir, 'knowledge'), { recursive: true });
+  console.log(`✅ 创建智能体目录: ${agentDir}`);
 
   // 处理头像
   let avatarFilename = '';
   if (opts.avatar) {
-    // 用户提供了自定义头像（相对路径基于 projectPath 解析）
-    const avatarSrc = resolvePath(projectPath, opts.avatar);
-    if (!avatarSrc) {
-      console.error('错误: 头像路径无效');
-      process.exit(1);
-    }
+    // 用户提供了自定义头像
+    const avatarSrc = path.resolve(opts.avatar);
     if (!fs.existsSync(avatarSrc)) {
       console.error(`错误: 头像文件不存在: ${avatarSrc}`);
       process.exit(1);
     }
     avatarFilename = 'avatar.png';
-    copyFile(avatarSrc, path.resolve(agentDir, avatarFilename));
-    console.log(`✅ 复制自定义头像: ${path.basename(avatarSrc)} -> ${avatarFilename}`);
+    copyFile(avatarSrc, path.join(agentDir, avatarFilename));
+    console.log(`✅ 复制自定义头像: ${avatarFilename}`);
   } else {
     // 使用随机默认头像
-    try {
-      const defaultAvatar = getRandomAvatarPath();
-      avatarFilename = 'avatar.png';
-      copyFile(defaultAvatar, path.resolve(agentDir, avatarFilename));
+    const defaultAvatar = getRandomAvatarPath();
+    if (fs.existsSync(defaultAvatar)) {
+      avatarFilename = `avatar.png`;
+      copyFile(defaultAvatar, path.join(agentDir, avatarFilename));
       console.log(`✅ 分配默认头像: ${path.basename(defaultAvatar)}`);
-    } catch (err) {
-      console.warn(`⚠️ 默认头像分配失败: ${err.message}`);
+    } else {
+      console.warn(`警告: 默认头像不存在，跳过头像设置`);
     }
   }
 
@@ -224,41 +174,23 @@ function main() {
     updatedAt: now,
   };
 
-  const agentJsonPath = path.resolve(agentDir, 'assistant.json');
+  const agentJsonPath = path.join(agentDir, 'assistant.json');
   fs.writeFileSync(agentJsonPath, JSON.stringify(agentJson, null, 2) + '\n', 'utf-8');
   console.log('✅ 生成 assistant.json');
 
   // 生成 agent.md
   const agentMdContent = `---\ndescription: ${agentJson.description}\n---\n\n${agentJson.role}\n`;
-  const agentMdPath = path.resolve(agentDir, 'agent.md');
+  const agentMdPath = path.join(agentDir, 'agent.md');
   fs.writeFileSync(agentMdPath, agentMdContent, 'utf-8');
   console.log('✅ 生成 agent.md');
 
-  // 自动添加用户确认的技能
-  if (opts.skills && opts.skills.length > 0) {
-    console.log('\n⏳ 正在添加技能...');
-    const addSkillScript = path.resolve(__dirname, 'add-skill.js');
-    for (const skillSource of opts.skills) {
-      if (!skillSource) continue;
-      try {
-        // execFileSync + 参数数组，避免命令注入 & 引号转义问题
-        execFileSync(
-          process.execPath,
-          [addSkillScript, opts.agentName, '--source', skillSource, '--path', projectPath],
-          { stdio: 'inherit' }
-        );
-      } catch {
-        console.warn(`⚠️ 技能添加失败，已跳过: ${skillSource}`);
-      }
-    }
-  }
-
   // 完成
-  console.log(`\n✅ 搭档 "${opts.displayName}" 初始化成功！`);
+  console.log(`\n✅ 智能体 "${opts.displayName}" 初始化成功！`);
   console.log(`   位置: ${agentDir}`);
   console.log('\n后续步骤:');
   console.log('  1. 编辑 assistant.json 完善角色设定 (role) 和功能描述 (description)');
-  console.log('  2. 将知识库文档放入 knowledge/ 目录');
+  console.log('  2. 使用 add-skill.js 添加技能');
+  console.log('  3. 将知识库文档放入 knowledge/ 目录');
 }
 
 main();
