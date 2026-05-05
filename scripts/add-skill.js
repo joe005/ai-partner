@@ -180,13 +180,25 @@ function main() {
   const sourceType = isRemoteUrl(opts.source) ? 'remote' : 'local';
 
   if (sourceType === 'local') {
-    const sourcePath = path.resolve(opts.source);
+    const sourcePath = path.isAbsolute(opts.source)
+      ? opts.source
+      : path.resolve(opts.projectPath, opts.source);
     if (!fs.existsSync(sourcePath)) {
       console.error(`错误: 源技能路径不存在: ${sourcePath}`);
       process.exit(1);
     }
 
     if (fs.statSync(sourcePath).isDirectory()) {
+      // 校验源目录非空且含 SKILL.md（技能的核心标识文件），避免"配置已写、磁盘为空"的脏状态
+      const entries = fs.readdirSync(sourcePath);
+      if (entries.length === 0) {
+        console.error(`错误: 源技能目录为空: ${sourcePath}`);
+        process.exit(1);
+      }
+      if (!fs.existsSync(path.join(sourcePath, 'SKILL.md'))) {
+        console.error(`错误: 源技能目录缺少 SKILL.md（非合法技能）: ${sourcePath}`);
+        process.exit(1);
+      }
       copyDirRecursive(sourcePath, skillDestDir);
     } else {
       // 单文件技能
@@ -196,6 +208,19 @@ function main() {
     console.log(`✅ 复制本地技能: ${sourcePath} → skills/${skillName}/`);
   } else {
     downloadAndExtract(opts.source, skillDestDir, skillName);
+    // 远程解压后同样校验
+    if (!fs.existsSync(path.join(skillDestDir, 'SKILL.md'))) {
+      // 可能嵌套一层（如 GitHub archive 解压后的 repo-branch/ 目录），尝试扁平化
+      const children = fs.readdirSync(skillDestDir, { withFileTypes: true }).filter(e => e.isDirectory());
+      if (children.length === 1 && fs.existsSync(path.join(skillDestDir, children[0].name, 'SKILL.md'))) {
+        // 源内容位于单一子目录下，保持不变（允许嵌套结构）
+      } else {
+        // 清理半成品避免孤儿目录
+        fs.rmSync(skillDestDir, { recursive: true, force: true });
+        console.error(`错误: 远程技能包缺少 SKILL.md，已回滚: ${opts.source}`);
+        process.exit(1);
+      }
+    }
   }
 
   // 更新 assistant.json

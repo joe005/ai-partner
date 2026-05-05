@@ -10,14 +10,16 @@
  *   --domain 财务|人力资源|销售|供应链|行政|法务|IT|通用
  *   --description "功能描述"
  *   --avatar <本地图片路径>
+ *   --skill <技能路径或URL>      可多次使用，初始化时自动添加
  *   --path <项目根目录>          默认为当前工作目录
  */
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
-// ── 预置头像列表 ──
-const DEFAULT_AVATARS = Array.from({ length: 12 }, (_, i) => `avatar-${String(i + 1).padStart(2, '0')}.png`);
+// ── 预置头像根目录 ──
+const AVATARS_DIR = path.resolve(__dirname, '..', 'assets', 'avatars');
 
 // ── 有效领域列表 ──
 const VALID_DOMAINS = ['财务', '人力资源', '销售', '供应链', '行政', '法务', 'IT', '通用'];
@@ -25,7 +27,7 @@ const VALID_DOMAINS = ['财务', '人力资源', '销售', '供应链', '行政'
 // ── 参数解析 ──
 function parseArgs(argv) {
   const args = argv.slice(2);
-  const result = { agentName: null, displayName: '', domain: '通用', description: '', avatar: '', projectPath: process.cwd() };
+  const result = { agentName: null, displayName: '', domain: '通用', description: '', avatar: '', skills: [], projectPath: process.cwd() };
 
   if (args.length === 0 || args[0].startsWith('--')) {
     return null; // 缺少 agent-name
@@ -46,9 +48,16 @@ function parseArgs(argv) {
       case '--avatar':
         result.avatar = args[++i] || '';
         break;
+      case '--skill': {
+        const s = args[++i];
+        if (s) result.skills.push(s);
+        break;
+      }
       case '--path':
         result.projectPath = args[++i] || process.cwd();
         break;
+      default:
+        console.warn(`警告: 未知参数 "${args[i]}"，已忽略`);
     }
   }
 
@@ -68,10 +77,13 @@ function copyFile(src, dest) {
   fs.copyFileSync(src, dest);
 }
 
-// ── 随机获取默认头像路径（技能包内置） ──
+// ── 随机获取默认头像路径（动态扫描 assets/avatars/） ──
 function getRandomAvatarPath() {
-  const avatarFile = DEFAULT_AVATARS[Math.floor(Math.random() * DEFAULT_AVATARS.length)];
-  return path.resolve(__dirname, '..', 'avatars', avatarFile);
+  if (!fs.existsSync(AVATARS_DIR)) return null;
+  const files = fs.readdirSync(AVATARS_DIR).filter(f => /^avatar-\d+\.png$/i.test(f));
+  if (files.length === 0) return null;
+  const avatarFile = files[Math.floor(Math.random() * files.length)];
+  return path.join(AVATARS_DIR, avatarFile);
 }
 
 // ── 生成角色设定 ──
@@ -96,7 +108,7 @@ function main() {
   const opts = parseArgs(process.argv);
 
   if (!opts) {
-    console.error('用法: node init-agent.js <agent-name> [--display-name "名称"] [--domain 领域] [--description "描述"] [--avatar <图片路径>] [--path <项目根目录>]');
+    console.error('用法: node init-agent.js <agent-name> [--display-name "名称"] [--domain 领域] [--description "描述"] [--avatar <图片路径>] [--skill <技能路径或URL>] [--path <项目根目录>]');
     console.error('\n领域可选值: ' + VALID_DOMAINS.join(' | '));
     process.exit(1);
   }
@@ -142,12 +154,12 @@ function main() {
   } else {
     // 使用随机默认头像
     const defaultAvatar = getRandomAvatarPath();
-    if (fs.existsSync(defaultAvatar)) {
+    if (defaultAvatar && fs.existsSync(defaultAvatar)) {
       avatarFilename = `avatar.png`;
       copyFile(defaultAvatar, path.join(agentDir, avatarFilename));
       console.log(`✅ 分配默认头像: ${path.basename(defaultAvatar)}`);
     } else {
-      console.warn(`警告: 默认头像不存在，跳过头像设置`);
+      console.warn(`警告: 默认头像目录不可用 (${AVATARS_DIR})，跳过头像设置`);
     }
   }
 
@@ -183,6 +195,24 @@ function main() {
   const agentMdPath = path.join(agentDir, 'agent.md');
   fs.writeFileSync(agentMdPath, agentMdContent, 'utf-8');
   console.log('✅ 生成 agent.md');
+
+  // 自动添加 --skill 传入的技能
+  if (opts.skills.length > 0) {
+    const addSkillScript = path.join(__dirname, 'add-skill.js');
+    for (const source of opts.skills) {
+      console.log(`\n⏳ 添加技能: ${source}`);
+      const res = spawnSync(
+        process.execPath,
+        [addSkillScript, opts.agentName, '--source', source, '--path', opts.projectPath],
+        { stdio: 'inherit' }
+      );
+      if (res.status !== 0) {
+        console.error(`\n❌ 添加技能失败: ${source}`);
+        console.error(`   智能体目录已创建但技能未完整添加，请修复后手动运行 add-skill.js`);
+        process.exit(1);
+      }
+    }
+  }
 
   // 完成
   console.log(`\n✅ 智能体 "${opts.displayName}" 初始化成功！`);
