@@ -61,7 +61,7 @@ function downloadAndExtract(url, destDir, skillName) {
     const tmpFile = path.join(tmpDir, 'skill-package');
 
     // 下载
-    console.log(`⏳ 正在下载: ${url}`);
+    console.log(`[...] 正在下载: ${url}`);
     try {
       execSync(`curl -fsSL -o "${tmpFile}" "${url}"`, { stdio: 'pipe' });
     } catch (err) {
@@ -100,7 +100,7 @@ function downloadAndExtract(url, destDir, skillName) {
       }
     }
 
-    console.log(`✅ 下载并解压完成: ${skillName}`);
+    console.log(`[OK] 下载并解压完成: ${skillName}`);
   } finally {
     // 清理临时文件
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -167,7 +167,7 @@ function main() {
       process.exit(1);
     }
     // 目录已不存在，清理孤立记录
-    console.log(`⚠️ 技能 "${skillName}" 的目录已丢失，清理旧记录后重新添加`);
+    console.log(`[WARN] 技能 "${skillName}" 的目录已丢失，清理旧记录后重新添加`);
     agentJson.skills.splice(existingSkillIndex, 1);
   }
 
@@ -205,15 +205,24 @@ function main() {
       fs.mkdirSync(skillDestDir, { recursive: true });
       fs.copyFileSync(sourcePath, path.join(skillDestDir, path.basename(sourcePath)));
     }
-    console.log(`✅ 复制本地技能: ${sourcePath} → skills/${skillName}/`);
+    console.log(`[OK] 复制本地技能: ${sourcePath} -> skills/${skillName}/`);
   } else {
     downloadAndExtract(opts.source, skillDestDir, skillName);
-    // 远程解压后同样校验
+    // 远程解压后校验：若根目录没有 SKILL.md，尝试打平单一嵌套子目录（典型于 GitHub archive 解压后的 repo-branch/ 结构）
     if (!fs.existsSync(path.join(skillDestDir, 'SKILL.md'))) {
-      // 可能嵌套一层（如 GitHub archive 解压后的 repo-branch/ 目录），尝试扁平化
-      const children = fs.readdirSync(skillDestDir, { withFileTypes: true }).filter(e => e.isDirectory());
-      if (children.length === 1 && fs.existsSync(path.join(skillDestDir, children[0].name, 'SKILL.md'))) {
-        // 源内容位于单一子目录下，保持不变（允许嵌套结构）
+      const topEntries = fs.readdirSync(skillDestDir, { withFileTypes: true });
+      const onlyChildIsDir = topEntries.length === 1 && topEntries[0].isDirectory();
+      const nestedName = onlyChildIsDir ? topEntries[0].name : null;
+      const nestedDir = nestedName ? path.join(skillDestDir, nestedName) : null;
+      const nestedHasSkillMd = nestedDir && fs.existsSync(path.join(nestedDir, 'SKILL.md'));
+
+      if (onlyChildIsDir && nestedHasSkillMd) {
+        // 打平：将嵌套子目录内容提升到 skillDestDir，再删除空壳
+        for (const entry of fs.readdirSync(nestedDir)) {
+          fs.renameSync(path.join(nestedDir, entry), path.join(skillDestDir, entry));
+        }
+        fs.rmdirSync(nestedDir);
+        console.log(`[OK] 打平嵌套目录: ${nestedName}/ -> skills/${skillName}/`);
       } else {
         // 清理半成品避免孤儿目录
         fs.rmSync(skillDestDir, { recursive: true, force: true });
@@ -237,20 +246,20 @@ function main() {
 
   agentJson.updatedAt = new Date().toISOString();
   fs.writeFileSync(agentJsonPath, JSON.stringify(agentJson, null, 2) + '\n', 'utf-8');
-  console.log('✅ 更新 assistant.json skills 数组');
+  console.log('[OK] 更新 assistant.json skills 数组');
 
   // 同步重写 agent.md
   const agentMdPath = path.join(path.dirname(agentJsonPath), 'agent.md');
   const agentMdContent = `---\ndescription: ${agentJson.description}\n---\n\n${agentJson.role}\n`;
   fs.writeFileSync(agentMdPath, agentMdContent, 'utf-8');
-  console.log('✅ 同步更新 agent.md');
+  console.log('[OK] 同步更新 agent.md');
 
-  console.log(`\n✅ 技能 "${skillName}" 添加成功！`);
+  console.log(`\n[OK] 技能 "${skillName}" 添加成功！`);
 }
 
 try {
   main();
 } catch (err) {
-  console.error(`\n❌ ${err.message}`);
+  console.error(`\n[ERR] ${err.message}`);
   process.exit(1);
 }

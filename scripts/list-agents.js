@@ -81,7 +81,7 @@ function scanLocalAgents(aiPartnersDir) {
 // ── 从远程 URL 获取清单 ──
 function fetchRemoteAgents(url) {
   try {
-    console.log(`⏳ 正在获取远程清单: ${url}`);
+    console.log(`[...] 正在获取远程清单: ${url}`);
     const result = execSync(`curl -fsSL "${url}"`, { encoding: 'utf-8' });
     const data = JSON.parse(result);
     return Array.isArray(data.agents) ? data.agents : (Array.isArray(data) ? data : []);

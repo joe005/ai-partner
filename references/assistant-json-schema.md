@@ -12,7 +12,7 @@
 |------|------|------|------|
 | `name` | string | 是 | 智能体唯一标识符，仅限小写字母、数字和连字符，需与目录名一致 |
 | `displayName` | string | 是 | 智能体显示名称，支持中文 |
-| `avatar` | string | 否 | 头像文件名（如 `avatar.png`），相对于智能体目录 |
+| `avatar` | string | 是 | 头像文件名（如 `avatar.png`），相对于智能体目录；初始化时由脚本自动分配（用户传入或从内置头像随机选择） |
 | `description` | string | 是 | 智能体功能的简要描述 |
 | `domain` | string | 是 | 领域标签，见下方枚举值 |
 | `visibility` | string | 是 | 可见范围，见下方枚举值，默认 `public` |

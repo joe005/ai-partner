@@ -137,7 +137,7 @@ function main() {
   fs.mkdirSync(agentDir, { recursive: true });
   fs.mkdirSync(path.join(agentDir, 'skills'), { recursive: true });
   fs.mkdirSync(path.join(agentDir, 'knowledge'), { recursive: true });
-  console.log(`✅ 创建智能体目录: ${agentDir}`);
+  console.log(`[OK] 创建智能体目录: ${agentDir}`);
 
   // 处理头像
   let avatarFilename = '';
@@ -150,14 +150,14 @@ function main() {
     }
     avatarFilename = 'avatar.png';
     copyFile(avatarSrc, path.join(agentDir, avatarFilename));
-    console.log(`✅ 复制自定义头像: ${avatarFilename}`);
+    console.log(`[OK] 复制自定义头像: ${avatarFilename}`);
   } else {
     // 使用随机默认头像
     const defaultAvatar = getRandomAvatarPath();
     if (defaultAvatar && fs.existsSync(defaultAvatar)) {
       avatarFilename = `avatar.png`;
       copyFile(defaultAvatar, path.join(agentDir, avatarFilename));
-      console.log(`✅ 分配默认头像: ${path.basename(defaultAvatar)}`);
+      console.log(`[OK] 分配默认头像: ${path.basename(defaultAvatar)}`);
     } else {
       console.warn(`警告: 默认头像目录不可用 (${AVATARS_DIR})，跳过头像设置`);
     }
@@ -188,26 +188,26 @@ function main() {
 
   const agentJsonPath = path.join(agentDir, 'assistant.json');
   fs.writeFileSync(agentJsonPath, JSON.stringify(agentJson, null, 2) + '\n', 'utf-8');
-  console.log('✅ 生成 assistant.json');
+  console.log('[OK] 生成 assistant.json');
 
   // 生成 agent.md
   const agentMdContent = `---\ndescription: ${agentJson.description}\n---\n\n${agentJson.role}\n`;
   const agentMdPath = path.join(agentDir, 'agent.md');
   fs.writeFileSync(agentMdPath, agentMdContent, 'utf-8');
-  console.log('✅ 生成 agent.md');
+  console.log('[OK] 生成 agent.md');
 
   // 自动添加 --skill 传入的技能
   if (opts.skills.length > 0) {
     const addSkillScript = path.join(__dirname, 'add-skill.js');
     for (const source of opts.skills) {
-      console.log(`\n⏳ 添加技能: ${source}`);
+      console.log(`\n[...] 添加技能: ${source}`);
       const res = spawnSync(
         process.execPath,
         [addSkillScript, opts.agentName, '--source', source, '--path', opts.projectPath],
         { stdio: 'inherit' }
       );
       if (res.status !== 0) {
-        console.error(`\n❌ 添加技能失败: ${source}`);
+        console.error(`\n[ERR] 添加技能失败: ${source}`);
         console.error(`   智能体目录已创建但技能未完整添加，请修复后手动运行 add-skill.js`);
         process.exit(1);
       }
@@ -215,7 +215,7 @@ function main() {
   }
 
   // 完成
-  console.log(`\n✅ 智能体 "${opts.displayName}" 初始化成功！`);
+  console.log(`\n[OK] 智能体 "${opts.displayName}" 初始化成功！`);
   console.log(`   位置: ${agentDir}`);
   console.log('\n后续步骤:');
   console.log('  1. 编辑 assistant.json 完善角色设定 (role) 和功能描述 (description)');
